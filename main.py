@@ -123,111 +123,114 @@ while True:
         clever_ct = 0
 
         for item in clever_vehicles:
-            # print("\n\nclever vehicle:\n", item)
-            vehicle_id = item["vehicle_id"]
-            route_id = item["route"]
+            try:
+                # print("\n\nclever vehicle:\n", item)
+                vehicle_id = item["vehicle_id"]
+                route_id = item["route"]
 
-            entity = feed.entity.add()
-            entity.id = vehicle_id
+                entity = feed.entity.add()
+                entity.id = vehicle_id
 
-            vehicle = entity.vehicle
-            vehicle.vehicle.id = vehicle_id
-            vehicle.vehicle.label = vehicle_id
+                vehicle = entity.vehicle
+                vehicle.vehicle.id = vehicle_id
+                vehicle.vehicle.label = vehicle_id
 
-            clever_vehicle_datetime = datetime.datetime.fromisoformat(item["timestamp"])
+                clever_vehicle_datetime = datetime.datetime.fromisoformat(item["timestamp"])
 
-            if vehicle_id in cloud_vehicles_by_id:
-                cloud_vehicle = cloud_vehicles_by_id[vehicle_id]
+                if vehicle_id in cloud_vehicles_by_id:
+                    cloud_vehicle = cloud_vehicles_by_id[vehicle_id]
 
-                cloud_vehicle_datetime = datetime.datetime.fromisoformat(
-                    cloud_vehicle["reported"]
-                )
+                    cloud_vehicle_datetime = datetime.datetime.fromisoformat(
+                        cloud_vehicle["reported"]
+                    )
 
-                # pick whatever has the most recent gps ping
-                if cloud_vehicle_datetime > clever_vehicle_datetime:
-                    vehicle.position.latitude = cloud_vehicle["latitude"]
-                    vehicle.position.longitude = cloud_vehicle["longitude"]
-                    vehicle.timestamp = int(cloud_vehicle_datetime.timestamp())
-                    cloud_ct += 1
+                    # pick whatever has the most recent gps ping
+                    if cloud_vehicle_datetime > clever_vehicle_datetime:
+                        vehicle.position.latitude = cloud_vehicle["latitude"]
+                        vehicle.position.longitude = cloud_vehicle["longitude"]
+                        vehicle.timestamp = int(cloud_vehicle_datetime.timestamp())
+                        cloud_ct += 1
+                    else:
+                        vehicle.position.latitude = item["latitude"]
+                        vehicle.position.longitude = item["longitude"]
+                        vehicle.timestamp = int(clever_vehicle_datetime.timestamp())
+                        clever_ct += 1
                 else:
                     vehicle.position.latitude = item["latitude"]
                     vehicle.position.longitude = item["longitude"]
                     vehicle.timestamp = int(clever_vehicle_datetime.timestamp())
                     clever_ct += 1
-            else:
-                vehicle.position.latitude = item["latitude"]
-                vehicle.position.longitude = item["longitude"]
-                vehicle.timestamp = int(clever_vehicle_datetime.timestamp())
-                clever_ct += 1
 
-            # skip if invalid position
-            if vehicle.position.latitude == 0 or vehicle.position.longitude == 0:
-                feed.entity.pop()
-                continue
+                # skip if invalid position
+                if vehicle.position.latitude == 0 or vehicle.position.longitude == 0:
+                    feed.entity.pop()
+                    continue
 
-            if "heading" in item:
-                vehicle.position.bearing = float(item["heading"])
-            if "speed" in item:
-                # convert miles per hour to meters per second
-                speed = float(item["speed"]) * 0.44704
-                if 0 < speed < 26:
-                    # only add speed if it's realistic
-                    vehicle.position.speed = speed
+                if "heading" in item:
+                    vehicle.position.bearing = float(item["heading"])
+                if "speed" in item:
+                    # convert miles per hour to meters per second
+                    speed = float(item["speed"]) * 0.44704
+                    if 0 < speed < 26:
+                        # only add speed if it's realistic
+                        vehicle.position.speed = speed
 
-            route = item["route"]
+                route = item["route"]
 
-            # when the trip was scheduled to start
-            scheduled_start_time = item["scheduled_start_time"]
-            scheduled_hms = hms(scheduled_start_time)
+                # when the trip was scheduled to start
+                scheduled_start_time = item["scheduled_start_time"]
+                scheduled_hms = hms(scheduled_start_time)
 
-            clever_destination = item["destination"]
+                clever_destination = item["destination"]
 
-            lookup_key = (route_id, clever_destination, scheduled_start_time)
-            # print("lookup_key:", lookup_key)
+                lookup_key = (route_id, clever_destination, scheduled_start_time)
+                # print("lookup_key:", lookup_key)
 
-            vehicle.trip.route_id = route_id
-            vehicle.trip.schedule_relationship = gtfs_realtime_pb2.TripDescriptor.SCHEDULED
+                vehicle.trip.route_id = route_id
+                vehicle.trip.schedule_relationship = gtfs_realtime_pb2.TripDescriptor.SCHEDULED
 
-            if lookup_key in trips_lookup:
-                gtfs_scheduled_trip = trips_lookup[lookup_key]
-                # print("\nmatch:\n", gtfs_scheduled_trip, "\n\n")
-                vehicle.trip.trip_id = gtfs_scheduled_trip["trip_id"]
-                vehicle.trip.start_time = gtfs_scheduled_trip["start_time"]
-                vehicle.trip.direction_id = int(gtfs_scheduled_trip["direction_id"])
-                # vehicle.stop_id = ... # can look up in static GTFS stop_times, to get sequence
-            else:
-                gtfs_scheduled_trip = None
-                vehicle.trip.trip_id = str(item["trip_id"])  # reluctantly use Clever's trip id
-                vehicle.trip.start_time = scheduled_hms
-                print("[gtfs-rt-vehicle-positions] couldn't find match for", lookup_key)
+                if lookup_key in trips_lookup:
+                    gtfs_scheduled_trip = trips_lookup[lookup_key]
+                    # print("\nmatch:\n", gtfs_scheduled_trip, "\n\n")
+                    vehicle.trip.trip_id = gtfs_scheduled_trip["trip_id"]
+                    vehicle.trip.start_time = gtfs_scheduled_trip["start_time"]
+                    vehicle.trip.direction_id = int(gtfs_scheduled_trip["direction_id"])
+                    # vehicle.stop_id = ... # can look up in static GTFS stop_times, to get sequence
+                else:
+                    gtfs_scheduled_trip = None
+                    vehicle.trip.trip_id = str(item["trip_id"])  # reluctantly use Clever's trip id
+                    vehicle.trip.start_time = scheduled_hms
+                    print("[gtfs-rt-vehicle-positions] couldn't find match for", lookup_key)
 
-            if now_datetime.time() < datetime.time(3, 0):
-                # currently assuming don't have any buses that pull out after midnight
-                trip_start_date = now_datetime.date() - datetime.timedelta(days=1)
-            else:
-                trip_start_date = now_datetime.date()
-            vehicle.trip.start_date = trip_start_date.strftime("%Y%m%d")
+                if now_datetime.time() < datetime.time(3, 0):
+                    # currently assuming don't have any buses that pull out after midnight
+                    trip_start_date = now_datetime.date() - datetime.timedelta(days=1)
+                else:
+                    trip_start_date = now_datetime.date()
+                vehicle.trip.start_date = trip_start_date.strftime("%Y%m%d")
 
-            rows.append(
-                {
-                    "vehicle_id": vehicle_id,
-                    "route_id": route_id,
-                    "trip_id": vehicle.trip.trip_id,
-                    "trip_start_date": trip_start_date.strftime("%Y-%m-%d"),
-                    "trip_start_time": vehicle.trip.start_time,
-                    "direction_id": vehicle.trip.direction_id,
-                    "direction": direction_ids[str(vehicle.trip.direction_id)],
-                    "headsign": gtfs_scheduled_trip["headsign"]
-                    if gtfs_scheduled_trip
-                    else None,
-                    "latitude": vehicle.position.latitude,
-                    "longitude": vehicle.position.longitude,
-                    "speed": vehicle.position.speed,
-                    "bearing": vehicle.position.bearing,
-                    "timestamp": vehicle.timestamp,
-                    "schedule_relationship": "scheduled",
-                }
-            )
+                rows.append(
+                    {
+                        "vehicle_id": vehicle_id,
+                        "route_id": route_id,
+                        "trip_id": vehicle.trip.trip_id,
+                        "trip_start_date": trip_start_date.strftime("%Y-%m-%d"),
+                        "trip_start_time": vehicle.trip.start_time,
+                        "direction_id": vehicle.trip.direction_id,
+                        "direction": direction_ids[str(vehicle.trip.direction_id)],
+                        "headsign": gtfs_scheduled_trip["headsign"]
+                        if gtfs_scheduled_trip
+                        else None,
+                        "latitude": vehicle.position.latitude,
+                        "longitude": vehicle.position.longitude,
+                        "speed": vehicle.position.speed,
+                        "bearing": vehicle.position.bearing,
+                        "timestamp": vehicle.timestamp,
+                        "schedule_relationship": "scheduled",
+                    }
+                )
+            except Exception as e:
+                print("[dataops-gtfs-rt-vehicle-positions] encountered issue with clever vehicle", e)
 
         # adding extras that aren't included in Clever
         for extra in extras:
